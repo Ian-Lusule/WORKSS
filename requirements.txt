@@ -1,0 +1,11 @@
+Flask
+Flask-WTF
+Werkzeug
+Jinja2
+WTForms
+cryptography
+passlib
+python-dotenv
+pydantic
+reportlab
+pytest
