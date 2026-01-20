@@ -1,0 +1,566 @@
+{% extends "base.html" %}
+
+{% block title %}Insights - MoneyFlow{% endblock %}
+
+{% block extra_css %}
+<style>
+    .chart-container {
+        position: relative;
+        height: 300px;
+    }
+    .insight-card {
+        transition: all 0.3s;
+    }
+    .insight-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .stat-badge {
+        font-size: 0.9rem;
+        padding: 4px 8px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h2><i class="fas fa-chart-line me-2"></i> Financial Insights</h2>
+        <p class="text-muted">Analyze your spending patterns and trends</p>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="row mb-4">
+    <div class="col-md-3 col-6 mb-3">
+        <div class="card insight-card bg-primary text-white">
+            <div class="card-body">
+                <h6 class="card-title">Total Expenses</h6>
+                <h3 class="mb-0">${{ "%.2f"|format(category_totals.total) }}</h3>
+                <p class="card-text mt-2 mb-0"><small>All time</small></p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-6 mb-3">
+        <div class="card insight-card bg-success text-white">
+            <div class="card-body">
+                <h6 class="card-title">Avg. Monthly</h6>
+                <h3 class="mb-0">${{ "%.2f"|format(monthly_trend.average) }}</h3>
+                <p class="card-text mt-2 mb-0"><small>Last 12 months</small></p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-6 mb-3">
+        <div class="card insight-card bg-info text-white">
+            <div class="card-body">
+                <h6 class="card-title">Top Category</h6>
+                <h4 class="mb-0">
+                    {% if category_totals.categories %}
+                    {{ category_totals.categories[0] }}
+                    {% else %}
+                    N/A
+                    {% endif %}
+                </h4>
+                <p class="card-text mt-2 mb-0">
+                    <small>
+                        {% if category_totals.amounts %}
+                        ${{ "%.2f"|format(category_totals.amounts[0]) }}
+                        {% else %}
+                        $0.00
+                        {% endif %}
+                    </small>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-6 mb-3">
+        <div class="card insight-card bg-warning text-dark">
+            <div class="card-body">
+                <h6 class="card-title">Categories</h6>
+                <h3 class="mb-0">{{ category_totals.categories|length }}</h3>
+                <p class="card-text mt-2 mb-0"><small>Active categories</small></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row 1 -->
+<div class="row mb-4">
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i> Spending Distribution</h5>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary active" data-chart="pie">Pie</button>
+                    <button class="btn btn-outline-primary" data-chart="doughnut">Doughnut</button>
+                    <button class="btn btn-outline-primary" data-chart="bar">Bar</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="distributionChart"></canvas>
+                </div>
+                {% if category_totals.categories %}
+                <div class="mt-3">
+                    <small class="text-muted">Top Categories:</small>
+                    {% for i in range(min(3, category_totals.categories|length)) %}
+                    <span class="badge stat-badge me-1" 
+                          style="background-color: {{ category_totals.colors[i] }}">
+                        {{ category_totals.categories[i] }}: ${{ "%.2f"|format(category_totals.amounts[i]) }}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i> Budget vs Actual</h5>
+                <button class="btn btn-sm btn-outline-primary" id="refreshBudgetChart">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="budgetChart"></canvas>
+                </div>
+                {% if budget_vs_actual.categories %}
+                <div class="mt-3">
+                    <small class="text-muted">Budget Status:</small>
+                    {% for i in range(min(3, budget_vs_actual.categories|length)) %}
+                    {% set diff = budget_vs_actual.actual[i] - budget_vs_actual.budget[i] %}
+                    {% set status = "over" if diff > 0 else "under" %}
+                    {% set color = "danger" if diff > 0 else "success" %}
+                    <span class="badge bg-{{ color }} stat-badge me-1">
+                        {{ budget_vs_actual.categories[i] }}: 
+                        {{ "${:,.2f}".format(diff|abs) }} {{ status }}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row 2 -->
+<div class="row mb-4">
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i> Monthly Spending Trend</h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="trendChart"></canvas>
+                </div>
+                <div class="mt-3">
+                    <small class="text-muted">Trend Analysis:</small>
+                    <span class="badge stat-badge me-1 bg-info">
+                        Avg: ${{ "%.2f"|format(monthly_trend.average) }}
+                    </span>
+                    <span class="badge stat-badge me-1 bg-success">
+                        Min: ${{ "%.2f"|format(monthly_trend.amounts|min) if monthly_trend.amounts else 0 }}
+                    </span>
+                    <span class="badge stat-badge bg-danger">
+                        Max: ${{ "%.2f"|format(monthly_trend.amounts|max) if monthly_trend.amounts else 0 }}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-calendar-alt me-2"></i> Daily Spending (Last 30 Days)</h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="dailyChart"></canvas>
+                </div>
+                <div class="mt-3">
+                    <small class="text-muted">Daily Stats:</small>
+                    <span class="badge stat-badge me-1 bg-info">
+                        Avg: ${{ "%.2f"|format(spending_by_day.average) }}
+                    </span>
+                    <span class="badge stat-badge me-1 bg-success">
+                        Min: ${{ "%.2f"|format(spending_by_day.min) }}
+                    </span>
+                    <span class="badge stat-badge bg-danger">
+                        Max: ${{ "%.2f"|format(spending_by_day.max) }}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recommendations -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-lightbulb me-2"></i> Recommendations</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100 border-primary">
+                            <div class="card-body">
+                                <h6 class="card-title text-primary">
+                                    <i class="fas fa-piggy-bank me-2"></i> Savings Opportunity
+                                </h6>
+                                <p class="card-text">
+                                    {% if category_totals.amounts|length > 0 %}
+                                    Consider reducing spending in 
+                                    <strong>{{ category_totals.categories[0] }}</strong> 
+                                    by 10% to save 
+                                    <strong>${{ "%.2f"|format(category_totals.amounts[0] * 0.1) }}</strong> 
+                                    monthly.
+                                    {% else %}
+                                    Start tracking expenses to identify savings opportunities.
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100 border-success">
+                            <div class="card-body">
+                                <h6 class="card-title text-success">
+                                    <i class="fas fa-chart-line me-2"></i> Trend Analysis
+                                </h6>
+                                <p class="card-text">
+                                    {% if monthly_trend.amounts|length > 1 %}
+                                    Your spending has 
+                                    {% set last = monthly_trend.amounts[-1] %}
+                                    {% set prev = monthly_trend.amounts[-2] %}
+                                    {% set change = ((last - prev) / prev * 100) if prev > 0 else 0 %}
+                                    {% if change > 0 %}
+                                    <strong class="text-danger">increased by {{ "%.1f"|format(change) }}%</strong>
+                                    {% else %}
+                                    <strong class="text-success">decreased by {{ "%.1f"|format(-change) }}%</strong>
+                                    {% endif %}
+                                    compared to last month.
+                                    {% else %}
+                                    Continue tracking to see your spending trends.
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100 border-info">
+                            <div class="card-body">
+                                <h6 class="card-title text-info">
+                                    <i class="fas fa-bullseye me-2"></i> Budget Optimization
+                                </h6>
+                                <p class="card-text">
+                                    {% if budget_vs_actual.categories|length > 0 %}
+                                    Review your 
+                                    <strong>{{ budget_vs_actual.categories[0] }}</strong> 
+                                    budget. You're 
+                                    {% set diff = budget_vs_actual.actual[0] - budget_vs_actual.budget[0] %}
+                                    {% if diff > 0 %}
+                                    <strong class="text-danger">over by ${{ "%.2f"|format(diff) }}</strong>.
+                                    {% else %}
+                                    <strong class="text-success">under by ${{ "%.2f"|format(-diff) }}</strong>.
+                                    {% endif %}
+                                    {% else %}
+                                    Set up budgets to better control your spending.
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        let distributionChart, budgetChart, trendChart, dailyChart;
+        let currentChartType = 'pie';
+        
+        // Initialize Distribution Chart
+        function initDistributionChart(type = 'pie') {
+            const ctx = document.getElementById('distributionChart').getContext('2d');
+            
+            if (distributionChart) {
+                distributionChart.destroy();
+            }
+            
+            distributionChart = new Chart(ctx, {
+                type: type,
+                data: {
+                    labels: {{ category_totals.categories|tojson }},
+                    datasets: [{
+                        data: {{ category_totals.amounts|tojson }},
+                        backgroundColor: {{ category_totals.colors|tojson }},
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                padding: 20,
+                                usePointStyle: true
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.parsed || 0;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                    return `${label}: $${value.toFixed(2)} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            currentChartType = type;
+        }
+        
+        // Initialize Budget Chart
+        function initBudgetChart() {
+            const ctx = document.getElementById('budgetChart').getContext('2d');
+            
+            if (budgetChart) {
+                budgetChart.destroy();
+            }
+            
+            budgetChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: {{ budget_vs_actual.categories|tojson }},
+                    datasets: [
+                        {
+                            label: 'Budget',
+                            data: {{ budget_vs_actual.budget|tojson }},
+                            backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Actual',
+                            data: {{ budget_vs_actual.actual|tojson }},
+                            backgroundColor: 'rgba(255, 99, 132, 0.7)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return '$' + value;
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': $' + context.parsed.y.toFixed(2);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Initialize Trend Chart
+        function initTrendChart() {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            
+            if (trendChart) {
+                trendChart.destroy();
+            }
+            
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: {{ monthly_trend.months|tojson }},
+                    datasets: [{
+                        label: 'Monthly Spending',
+                        data: {{ monthly_trend.amounts|tojson }},
+                        borderColor: '#36A2EB',
+                        backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return '$' + value;
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return '$' + context.parsed.y.toFixed(2);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Initialize Daily Chart
+        function initDailyChart() {
+            const ctx = document.getElementById('dailyChart').getContext('2d');
+            
+            if (dailyChart) {
+                dailyChart.destroy();
+            }
+            
+            dailyChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: {{ spending_by_day.dates|tojson }},
+                    datasets: [{
+                        label: 'Daily Spending',
+                        data: {{ spending_by_day.amounts|tojson }},
+                        backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return '$' + value;
+                                }
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return '$' + context.parsed.y.toFixed(2);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Initialize all charts
+        initDistributionChart('pie');
+        initBudgetChart();
+        initTrendChart();
+        initDailyChart();
+        
+        // Chart type switcher
+        $('[data-chart]').click(function() {
+            const type = $(this).data('chart');
+            $('[data-chart]').removeClass('active');
+            $(this).addClass('active');
+            initDistributionChart(type);
+        });
+        
+        // Refresh budget chart
+        $('#refreshBudgetChart').click(function() {
+            $(this).find('i').addClass('fa-spin');
+            
+            // Simulate data refresh
+            setTimeout(() => {
+                initBudgetChart();
+                $(this).find('i').removeClass('fa-spin');
+                showToast('Budget chart refreshed!', 'success');
+            }, 500);
+        });
+        
+        // Toast notification function
+        function showToast(message, type) {
+            const toast = $(`
+                <div class="toast align-items-center text-bg-${type} border-0" role="alert">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i>
+                            ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                </div>
+            `);
+            
+            $('.toast-container').append(toast);
+            const bsToast = new bootstrap.Toast(toast[0]);
+            bsToast.show();
+            
+            toast.on('hidden.bs.toast', function() {
+                $(this).remove();
+            });
+        }
+        
+        // Create toast container if it doesn't exist
+        if ($('.toast-container').length === 0) {
+            $('body').append('<div class="toast-container position-fixed bottom-0 end-0 p-3"></div>');
+        }
+        
+        // Handle window resize
+        let resizeTimer;
+        $(window).resize(function() {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(function() {
+                initDistributionChart(currentChartType);
+                initBudgetChart();
+                initTrendChart();
+                initDailyChart();
+            }, 250);
+        });
+    });
+</script>
+{% endblock %}
