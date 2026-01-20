@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+
+{% block title %}Budgets - MoneyFlow{% endblock %}
+
+{% block extra_css %}
+<style>
+    .budget-card {
+        border-left: 4px solid;
+        transition: transform 0.2s;
+    }
+    .budget-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .progress {
+        height: 20px;
+        border-radius: 10px;
+    }
+    .budget-met {
+        border-left-color: #198754 !important;
+    }
+    .budget-warning {
+        border-left-color: #ffc107 !important;
+    }
+    .budget-exceeded {
+        border-left-color: #dc3545 !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2><i class="fas fa-chart-pie me-2"></i> Budgets</h2>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addBudgetModal">
+                <i class="fas fa-plus me-1"></i> Create Budget
+            </button>
+        </div>
+        <p class="text-muted">Set and track your spending limits</p>
+    </div>
+</div>
+
+<!-- Budget Summary -->
+<div class="row mb-4">
+    <div class="col-md-3 col-6 mb-3">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6 class="card-title text-muted">Total Budget</h6>
+                <h4 class="mb-0 text-success">
+                    ${% set total_budget = namespace(value=0) %}
+                    {% for budget in budgets %}
+                    {% set total_budget.value = total_budget.value + budget.budget.amount %}
+                    {% endfor %}
+                    {{ "%.2f"|format(total_budget.value) }}
+                </h4>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-6 mb-3">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6 class="card-title text-muted">Total Spent</h6>
+                <h4 class="mb-0 text-danger">
+                    ${% set total_spent = namespace(value=0) %}
+                    {% for budget in budgets %}
+                    {% set total_spent.value = total_spent.value + budget.progress.spent %}
+                    {% endfor %}
+                    {{ "%.2f"|format(total_spent.value) }}
+                </h4>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-6 mb-3">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6 class="card-title text-muted">Remaining</h6>
+                <h4 class="mb-0 text-primary">
+                    ${% set total_remaining = namespace(value=0) %}
+                    {% for budget in budgets %}
+                    {% set total_remaining.value = total_remaining.value + budget.progress.remaining %}
+                    {% endfor %}
+                    {{ "%.2f"|format(total_remaining.value) }}
+                </h4>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-6 mb-3">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6 class="card-title text-muted">On Track</h6>
+                <h4 class="mb-0">
+                    {% set on_track = namespace(value=0) %}
+                    {% for budget in budgets %}
+                    {% if not budget.progress.exceeded %}
+                    {% set on_track.value = on_track.value + 1 %}
+                    {% endif %}
+                    {% endfor %}
+                    {{ on_track.value }}/{{ budgets|length }}
+                </h4>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Budgets Grid -->
+<div class="row">
+    {% if budgets %}
+        {% for item in budgets %}
+        {% set budget = item.budget %}
+        {% set progress = item.progress %}
+        {% set percentage = progress.percentage %}
+        
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card budget-card 
+                {% if progress.exceeded %}budget-exceeded
+                {% elif percentage > 80 %}budget-warning
+                {% else %}budget-met{% endif %}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h5 class="card-title mb-1">
+                                <i class="fas fa-{{ budget.category|category_icon }} me-2"></i>
+                                {{ budget.category|capitalize }}
+                            </h5>
+                            <small class="text-muted">
+                                {{ budget.period|capitalize }} Budget
+                                {% if progress.start_date %}
+                                • Started {{ progress.start_date.strftime('%b %d') }}
+                                {% endif %}
+                            </small>
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger delete-budget" 
+                                data-budget-id="{{ budget.id }}"
+                                title="Delete Budget">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-muted">Spent</span>
+                            <span>
+                                <strong>${{ "%.2f"|format(progress.spent) }}</strong>
+                                <small class="text-muted"> / ${{ "%.2f"|format(progress.budget) }}</small>
+                            </span>
+                        </div>
+                        <div class="progress">
+                            {% set bg_class = "bg-danger" if progress.exceeded else 
+                                             "bg-warning" if percentage > 80 else "bg-success" %}
+                            <div class="progress-bar {{ bg_class }}" 
+                                 role="progressbar" 
+                                 style="width: {{ min(percentage, 100) }}%"
+                                 aria-valuenow="{{ percentage }}" 
+                                 aria-valuemin="0" 
+                                 aria-valuemax="100">
+                                {{ "%.1f"|format(percentage) }}%
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <div class="text-muted"><small>Budget</small></div>
+                            <div class="fw-bold text-success">${{ "%.2f"|format(progress.budget) }}</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted"><small>Remaining</small></div>
+                            <div class="fw-bold {% if progress.remaining < 0 %}text-danger{% else %}text-primary{% endif %}">
+                                ${{ "%.2f"|format(progress.remaining) }}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {% if progress.exceeded %}
+                    <div class="alert alert-danger alert-sm mt-3 mb-0 py-2">
+                        <i class="fas fa-exclamation-circle me-1"></i>
+                        <small>Budget exceeded by ${{ "%.2f"|format(-progress.remaining) }}</small>
+                    </div>
+                    {% elif percentage > 80 %}
+                    <div class="alert alert-warning alert-sm mt-3 mb-0 py-2">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        <small>Close to budget limit</small>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-success alert-sm mt-3 mb-0 py-2">
+                        <i class="fas fa-check-circle me-1"></i>
+                        <small>On track</small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body text-center py-5">
+                <i class="fas fa-chart-pie fa-4x text-muted mb-3"></i>
+                <h5 class="text-muted">No budgets set up yet</h5>
+                <p class="text-muted">Create budgets to track your spending limits</p>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addBudgetModal">
+                    <i class="fas fa-plus me-1"></i> Create Your First Budget
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Add Budget Modal -->
+<div class="modal fade" id="addBudgetModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-plus-circle me-2"></i> Create New Budget</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addBudgetForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="budget_category" class="form-label">Category</label>
+                        <select class="form-select" id="budget_category" name="category" required>
+                            <option value="">Select a category</option>
+                            <option value="food">Food & Dining</option>
+                            <option value="transport">Transportation</option>
+                            <option value="shopping">Shopping</option>
+                            <option value="entertainment">Entertainment</option>
+                            <option value="bills">Bills & Utilities</option>
+                            <option value="health">Health & Medical</option>
+                            <option value="education">Education</option>
+                            <option value="travel">Travel</option>
+                            <option value="other">Other</option>
+                            <option value="overall">Overall Budget</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="budget_amount" class="form-label">Budget Amount</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" id="budget_amount" name="amount" 
+                                   step="0.01" min="1" required placeholder="0.00">
+                        </div>
+                        <div class="form-text">Set your spending limit for this category</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="budget_period" class="form-label">Period</label>
+                        <select class="form-select" id="budget_period" name="period" required>
+                            <option value="monthly">Monthly</option>
+                            <option value="yearly">Yearly</option>
+                        </select>
+                        <div class="form-text">Budget resets at the end of each period</div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <small>
+                            You'll receive notifications when you approach or exceed your budget limits.
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i> Create Budget
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        // Add Budget Form Submission
+        $('#addBudgetForm').submit(function(e) {
+            e.preventDefault();
+            
+            const formData = {
+                category: $('#budget_category').val(),
+                amount: parseFloat($('#budget_amount').val()),
+                period: $('#budget_period').val()
+            };
+            
+            // Show loading state
+            const submitBtn = $(this).find('button[type="submit"]');
+            const originalText = submitBtn.html();
+            submitBtn.html('<i class="fas fa-spinner fa-spin me-1"></i> Saving...');
+            submitBtn.prop('disabled', true);
+            
+            $.ajax({
+                url: '{{ url_for("add_budget") }}',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(formData),
+                success: function(response) {
+                    if (response.success) {
+                        showToast('Budget created successfully!', 'success');
+                        
+                        // Reset form
+                        $('#addBudgetForm')[0].reset();
+                        
+                        // Close modal
+                        $('#addBudgetModal').modal('hide');
+                        
+                        // Reload page to show new budget
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showToast('Error: ' + response.error, 'danger');
+                        submitBtn.html(originalText);
+                        submitBtn.prop('disabled', false);
+                    }
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON?.error || 'An error occurred';
+                    showToast('Error: ' + error, 'danger');
+                    submitBtn.html(originalText);
+                    submitBtn.prop('disabled', false);
+                }
+            });
+        });
+        
+        // Delete Budget
+        $('.delete-budget').click(function() {
+            const budgetId = $(this).data('budget-id');
+            const budgetCard = $(this).closest('.budget-card');
+            
+            if (confirm('Are you sure you want to delete this budget?')) {
+                $.ajax({
+                    url: '/budgets/' + budgetId + '/delete',
+                    method: 'DELETE',
+                    success: function(response) {
+                        if (response.success) {
+                            showToast('Budget deleted successfully!', 'success');
+                            budgetCard.fadeOut(300, function() {
+                                $(this).remove();
+                            });
+                        } else {
+                            showToast('Error: ' + response.error, 'danger');
+                        }
+                    },
+                    error: function(xhr) {
+                        const error = xhr.responseJSON?.error || 'An error occurred';
+                        showToast('Error: ' + error, 'danger');
+                    }
+                });
+            }
+        });
+        
+        // Toast notification function
+        function showToast(message, type) {
+            const toast = $(`
+                <div class="toast align-items-center text-bg-${type} border-0" role="alert">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i>
+                            ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                </div>
+            `);
+            
+            $('.toast-container').append(toast);
+            const bsToast = new bootstrap.Toast(toast[0]);
+            bsToast.show();
+            
+            toast.on('hidden.bs.toast', function() {
+                $(this).remove();
+            });
+        }
+        
+        // Create toast container if it doesn't exist
+        if ($('.toast-container').length === 0) {
+            $('body').append('<div class="toast-container position-fixed bottom-0 end-0 p-3"></div>');
+        }
+    });
+</script>
+{% endblock %}
